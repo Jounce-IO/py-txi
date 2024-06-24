@@ -1,22 +1,18 @@
 import asyncio
 import logging
 import os
-import re
 import time
+import subprocess
 from abc import ABC
 from dataclasses import asdict, dataclass, field
 from logging import getLogger
 from typing import Any, Dict, List, Optional, Union
 
-import docker
-import docker.errors
-import docker.types
 from huggingface_hub import AsyncInferenceClient
 from huggingface_hub.constants import HUGGINGFACE_HUB_CACHE
 
 from .utils import get_free_port, styled_logs
 
-DOCKER = docker.from_env()
 LOGGER = getLogger("Inference-Server")
 logging.basicConfig(level=logging.INFO)
 
@@ -69,31 +65,6 @@ class InferenceServer(ABC):
     def __init__(self, config: InferenceServerConfig) -> None:
         self.config = config
 
-        try:
-            LOGGER.info(f"\t+ Checking if {self.NAME} image is available locally")
-            DOCKER.images.get(self.config.image)
-            LOGGER.info(f"\t+ {self.NAME} image found locally")
-        except docker.errors.ImageNotFound:
-            LOGGER.info(f"\t+ {self.NAME} image not found locally, pulling from Docker Hub")
-            DOCKER.images.pull(self.config.image)
-
-        if self.config.gpus is not None and isinstance(self.config.gpus, str) and self.config.gpus == "all":
-            LOGGER.info("\t+ Using all GPU(s)")
-            self.device_requests = [docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])]
-        elif self.config.gpus is not None and isinstance(self.config.gpus, int):
-            LOGGER.info(f"\t+ Using {self.config.gpus} GPU(s)")
-            self.device_requests = [docker.types.DeviceRequest(count=self.config.gpus, capabilities=[["gpu"]])]
-        elif (
-            self.config.gpus is not None
-            and isinstance(self.config.gpus, str)
-            and re.match(r"^\d+(,\d+)*$", self.config.gpus)
-        ):
-            LOGGER.info(f"\t+ Using GPU(s) {self.config.gpus}")
-            self.device_requests = [docker.types.DeviceRequest(device_ids=[self.config.gpus], capabilities=[["gpu"]])]
-        else:
-            LOGGER.info("\t+ Not using any GPU(s)")
-            self.device_requests = None
-
         LOGGER.info(f"\t+ Building {self.NAME} command")
         self.command = []
 
@@ -122,18 +93,8 @@ class InferenceServer(ABC):
                 LOGGER.warning(f"\t+ Environment variable {key} not found in the system")
 
         LOGGER.info(f"\t+ Running {self.NAME} container")
-        self.container = DOCKER.containers.run(
-            image=self.config.image,
-            ports=self.config.ports,
-            volumes=self.config.volumes,
-            devices=self.config.devices,
-            shm_size=self.config.shm_size,
-            environment=self.environment,
-            device_requests=self.device_requests,
-            command=self.command,
-            auto_remove=True,
-            detach=True,
-        )
+        result = subprocess.run(args=self.command, capture_output=True, check=False)
+        LOGGER.info(f"\t+ Subprocess result {result.stdout.decode()}")
 
         LOGGER.info(f"\t+ Streaming {self.NAME} server logs")
         for line in self.container.logs(stream=True):
