@@ -92,7 +92,7 @@ class InferenceServer(ABC):
             else:
                 LOGGER.warning(f"\t+ Environment variable {key} not found in the system")
 
-        self.command = ["/tgi-entrypoint.sh"] + self.command
+        self.command = ["text-generation-launcher"] + self.command
 
         LOGGER.info(f"\t+ Running {self.NAME} process")
         self.process = subprocess.Popen(args=self.command, stdout=subprocess.PIPE)
