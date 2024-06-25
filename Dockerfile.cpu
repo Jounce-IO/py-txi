@@ -1,1 +1,0 @@
-FROM ghcr.io/huggingface/text-embeddings-inference:cpu-latest

@@ -92,6 +92,8 @@ class InferenceServer(ABC):
             else:
                 LOGGER.warning(f"\t+ Environment variable {key} not found in the system")
 
+        self.command = ["/tgi-entrypoint.sh"] + self.command
+
         LOGGER.info(f"\t+ Running {self.NAME} container")
         result = subprocess.run(args=self.command, capture_output=True, check=False)
         LOGGER.info(f"\t+ Subprocess result {result.stdout.decode()}")
