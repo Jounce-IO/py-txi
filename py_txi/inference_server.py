@@ -94,12 +94,11 @@ class InferenceServer(ABC):
 
         self.command = ["/tgi-entrypoint.sh"] + self.command
 
-        LOGGER.info(f"\t+ Running {self.NAME} container")
-        result = subprocess.run(args=self.command, capture_output=True, check=False)
-        LOGGER.info(f"\t+ Subprocess result {result.stdout.decode()}")
+        LOGGER.info(f"\t+ Running {self.NAME} process")
+        self.process = subprocess.Popen(args=self.command, stdout=subprocess.PIPE)
 
         LOGGER.info(f"\t+ Streaming {self.NAME} server logs")
-        for line in self.container.logs(stream=True):
+        for line in iter(lambda: self.process.stdout.readline(), b""):
             log = line.decode("utf-8").strip()
             log = styled_logs(log)
 
@@ -112,7 +111,7 @@ class InferenceServer(ABC):
             else:
                 LOGGER.info(f"\t+ {log}")
 
-        address, port = self.config.ports["80/tcp"]
+        address, port = "localhost", "80"
         self.url = f"http://{address}:{port}"
 
         try:
@@ -127,6 +126,7 @@ class InferenceServer(ABC):
         while time.time() - start_time < self.config.timeout:
             try:
                 if not hasattr(self, "client"):
+                    LOGGER.info(f"\t+ Trying to connect to {self.url}")
                     self.client = AsyncInferenceClient(model=self.url)
 
                 asyncio.run(self.single_client_call(f"Hello {self.NAME}!"))
@@ -143,13 +143,11 @@ class InferenceServer(ABC):
         raise NotImplementedError
 
     def close(self) -> None:
-        if hasattr(self, "container"):
-            LOGGER.info("\t+ Stoping Docker container")
-            if self.container.status == "running":
-                self.container.stop()
-                self.container.wait()
-            LOGGER.info("\t+ Docker container stopped")
-            del self.container
+        if hasattr(self, "process"):
+            LOGGER.info("\t+ Stoping Process")
+            if self.process.poll() is not None:
+                self.process.kill()
+            LOGGER.info("\t+ process stopped")
 
         if hasattr(self, "semaphore"):
             if self.semaphore.locked():
